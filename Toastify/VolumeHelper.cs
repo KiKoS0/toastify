@@ -1,8 +1,12 @@
 ﻿using System;
+using CSCore.CoreAudioAPI;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Collections.Concurrent;
+using System.Diagnostics;
+using System.Threading.Tasks;
 
 namespace Toastify
 {
@@ -130,13 +134,44 @@ namespace Toastify
             Marshal.ReleaseComObject(speakers);
             Marshal.ReleaseComObject(deviceEnumerator);
         }
+        public static float GetSpotifyInstaVolume()
+        {
+            using (var enumerator = new CSCore.CoreAudioAPI.MMDeviceEnumerator())
+            using (var device = enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia))
+            using (var sessionManager = AudioSessionManager2.FromMMDevice(device))
+            using (var sessionEnumerator = sessionManager.GetSessionEnumerator())
+            {
+                foreach (var session in sessionEnumerator)
+                {
+                    using (var audioMeterInformation = session.QueryInterface<AudioMeterInformation>())
+                    using (var audioIdInformation = session.QueryInterface<AudioSessionControl2>())
+                    {
+                        if (audioIdInformation.SessionIdentifier.Contains("Spotify"))
+                        {
 
+                            return audioMeterInformation.GetPeakValue();
+                        }
+                    }
+                }
+            }
+            return float.NaN;
+        }
         private static ISimpleAudioVolume GetVolumeObject(string name)
         {
             // get the speakers (1st render + multimedia) device
-            IMMDeviceEnumerator deviceEnumerator = (IMMDeviceEnumerator)(new MMDeviceEnumerator());
+            IMMDeviceEnumerator deviceEnumerator;
+            try
+            {
+                var  dev = new MMDeviceEnumerator();
+            }
+            catch(Exception e) {
+                //Spotify.FastFileLogger("EXCEPTION");
+                return null;
+            }
+            deviceEnumerator = (IMMDeviceEnumerator)(new MMDeviceEnumerator());
             IMMDevice speakers;
             deviceEnumerator.GetDefaultAudioEndpoint(EDataFlow.eRender, ERole.eMultimedia, out speakers);
+            //Spotify.FastFileLogger("PASSED");
 
             // activate the session manager. we need the enumerator
             Guid IID_IAudioSessionManager2 = typeof(IAudioSessionManager2).GUID;
@@ -225,7 +260,7 @@ namespace Toastify
             eCommunications,
             ERole_enum_count
         }
-
+        
         [Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
         internal interface IMMDeviceEnumerator
         {

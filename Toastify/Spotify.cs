@@ -9,12 +9,13 @@ using System.IO;
 using System.Reflection;
 using System.Net;
 using Newtonsoft.Json;
+using System.Diagnostics;
 
 namespace Toastify
 {
     internal class Win32
     {
-        [DllImport("user32.dll", SetLastError = true)]
+        [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
         internal static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
 
         internal delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
@@ -173,7 +174,6 @@ namespace Toastify
             Track = title;
             Album = album;
         }
-
         public override string ToString()
         {
             if (Artist == null)
@@ -186,7 +186,10 @@ namespace Toastify
         {
             return (!string.IsNullOrEmpty(Artist) || !string.IsNullOrEmpty(Track));
         }
-
+        internal bool IsAnAd()
+        {
+            return (string.Equals(Track, "SpotifyAds"));
+        }
         public override bool Equals(object obj)
         {
             var target = obj as Song;
@@ -278,7 +281,7 @@ namespace Toastify
             foreach (var proc in procs)
             {
                 // lParam == Band Process Id, passed in below
-                Win32.EnumWindows(delegate(IntPtr hWnd, IntPtr lParam)
+                Win32.EnumWindows(delegate (IntPtr hWnd, IntPtr lParam)
                 {
                     uint processId = 0;
                     Win32.GetWindowThreadProcessId(hWnd, out processId);
@@ -316,32 +319,60 @@ namespace Toastify
             KillProc("spotify");
         }
 
+        private static IntPtr GetSpotifyByProcess(){
+            foreach (Process process in Process.GetProcessesByName("Spotify"))
+            {
+                if (!String.IsNullOrEmpty(process.MainWindowTitle))
+                    return process.MainWindowHandle;
+
+            }
+            return IntPtr.Zero;
+        }
+
         private static IntPtr GetSpotify()
         {
-            var windowClassName = "SpotifyMainWindow";
-
-            return Win32.FindWindow(windowClassName, null);
+            var windowClassName = "Chrome_WidgetWin_0";
+            var handle = Win32.FindWindow(windowClassName, "Spotify");
+            if (handle == IntPtr.Zero)
+            {
+                handle = GetSpotifyByProcess();
+            }
+            return handle;
         }
 
         public static bool IsRunning()
         {
             return (GetSpotify() != IntPtr.Zero);
         }
-
+        public static void FastFileLogger(string title)
+        {
+            string path = "LOGS.txt";
+            using (FileStream fs = File.Open(path, FileMode.OpenOrCreate, FileAccess.Write, FileShare.None))
+            {
+                fs.Seek(0, SeekOrigin.End);
+                string bytesToWrite = title + Environment.NewLine;
+                Byte[] info = new UTF8Encoding(true).GetBytes(bytesToWrite);
+                // Add some information to the file.
+                fs.Write(info, 0, info.Length);
+            }
+        }
         public static Song GetCurrentSong()
         {
             if (!Spotify.IsRunning())
+            {
                 return null;
-
+            }
             string song = "";
             string artist = "";
             string album = "";
+           
 
             IntPtr hWnd = GetSpotify();
             int length = Win32.GetWindowTextLength(hWnd);
             StringBuilder sb = new StringBuilder(length + 1);
             Win32.GetWindowText(hWnd, sb, sb.Capacity);
 
+            //float spotifyVolume = VolumeHelper.GetSpotifyInstaVolume();
             string title = sb.ToString();
 
             if (!string.IsNullOrWhiteSpace(title) && title != "Spotify")
@@ -360,13 +391,22 @@ namespace Toastify
 
                 return new Song(artist, song, album);
             }
+            else if (title == "Spotify")
+            {
+                float spotifyVolume = VolumeHelper.GetSpotifyInstaVolume();
+                if (!float.IsNaN(spotifyVolume)&& spotifyVolume > 0.00001f)
+                {
+                    // Most Probably an ad
+                    return new Song("SpotifyAds", "SpotifyAds", "SpotifyAds");
+                }
+            }
 
             return null;
         }
 
         public static void SetCoverArt(Song song)
         {
-            // probably an ad, don't bother looking for an image
+            // probably an ad, don't bother looking for an img
             if (string.IsNullOrWhiteSpace(song.Track) || string.IsNullOrWhiteSpace(song.Artist))
                 return;
 

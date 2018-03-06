@@ -53,6 +53,7 @@ namespace Toastify
 
         private bool dragging = false;
 
+        private bool adsFlag = false;
         public new Visibility Visibility
         {
             get { return base.Visibility; }
@@ -231,12 +232,18 @@ namespace Toastify
         {
             Song currentSong = Spotify.GetCurrentSong();
 
-            if (currentSong != null && currentSong.IsValid() && !currentSong.Equals(this.currentSong))
+            if (currentSong != null && currentSong.IsValid() && !currentSong.Equals(this.currentSong) && !currentSong.IsAnAd())
             {
                 // set the previous title asap so that the next timer call to this function will
                 // fail fast (setting it at the end may cause multiple web requests)
+                if (adsFlag)
+                {
+                    adsFlag = false;
+                    VolumeHelper.SetApplicationMute("Spotify", false);
+                    //Debug.WriteLine("UnMuted-Ad finish");
+                }
                 this.currentSong = currentSong;
-
+                //Debug.WriteLine(currentSong.ToString());
                 try
                 {
                     Spotify.SetCoverArt(currentSong);
@@ -283,6 +290,12 @@ namespace Toastify
                     }
                 }
             }
+            else if (currentSong != null && currentSong.IsAnAd() && !adsFlag)
+            {
+                adsFlag = true;
+                VolumeHelper.SetApplicationMute("Spotify", true);
+                Debug.WriteLine("Muted-Probably an Ad");
+            } 
         }
 
         private void UpdateSongForToastify(Song currentSong)
